@@ -1,0 +1,3 @@
+[submodule "embedding-server"]
+	path = embedding-server
+	url = https://github.com/reynkonig/embedding-server.git

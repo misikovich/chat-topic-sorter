@@ -7,7 +7,7 @@ The Twitch transport connects through EventSub, logs incoming messages. The topi
 ## Project components
 
 - **llama.cpp** LLM classifier, topic namegiver
-- [reynkonig](https://github.com/reynkonig)'s [**embedding word vector generator**](https://github.com/reynkonig/embedding-server.git)
+- [reynkonig](https://github.com/reynkonig)'s [**embedding server**](embedding-server/README.md), pinned as a Git submodule from [the upstream repository](https://github.com/reynkonig/embedding-server)
 - **webserver** to view resulted topics and control the bot
 
 ## Prerequisites
@@ -20,9 +20,16 @@ The Twitch transport connects through EventSub, logs incoming messages. The topi
 ## Install
 
 ```sh
+git submodule update --init --recursive
 npm install
 cp .env.example .env
 ```
+
+If cloning a fresh checkout, `git clone --recurse-submodules ...` initializes the embedding server in the same step.
+
+## Embedding server
+
+The embedding service lives in `embedding-server/`. Follow its [README](embedding-server/README.md) for Docker, local Python, model, and API configuration. Its default API address is `http://127.0.0.1:8091`.
 
 ## Twitch credentials
 
