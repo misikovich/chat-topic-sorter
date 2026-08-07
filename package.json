@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "node --test src/*.test.ts",
+    "test:llama": "node --env-file-if-exists=.env --test test/llama.live.test.ts",
     "start": "node --env-file-if-exists=.env src/index.ts",
     "check": "tsc --noEmit"
   },

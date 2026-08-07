@@ -88,7 +88,12 @@ npm start
 ```sh
 npm test
 npm run check
+
+# Requires ./llama/llama_serve.sh to be running.
+npm run test:llama
 ```
+
+`npm test` uses deterministic mocks. `npm run test:llama` is slower and evaluates the configured model and prompts against live classification and description corpora. `BATCHSIZE` controls both llama.cpp server slots and live-evaluation concurrency and defaults to `4`.
 
 ## Topic sorting flow for each new message:
 
