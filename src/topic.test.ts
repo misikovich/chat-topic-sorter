@@ -5,7 +5,13 @@ import { afterEach, beforeEach, test } from "node:test";
 
 import { topic_infer, topics, topics_reset, type ProcessedMessage } from "./topic.ts";
 
-const ENVIRONMENT = ["LLAMA_RETRIES", "LLAMA_SERVER_URL", "TOPIC_AFFINITY_THRESHOLD"] as const;
+const ENVIRONMENT = [
+  "LLAMA_RETRIES",
+  "LLAMA_SERVER_URL",
+  "TOPIC_AFFINITY_THRESHOLD",
+  "TOPIC_CENTROID_ALPHA",
+  "TOPIC_COHERENCE_THRESHOLD",
+] as const;
 const realEnvironment = new Map(ENVIRONMENT.map((name) => [name, process.env[name]]));
 const realFetch = globalThis.fetch;
 let messageId = 0;
@@ -15,6 +21,8 @@ beforeEach(() => {
   process.env.LLAMA_RETRIES = "0";
   process.env.LLAMA_SERVER_URL = "http://llama.test:9000";
   delete process.env.TOPIC_AFFINITY_THRESHOLD;
+  delete process.env.TOPIC_CENTROID_ALPHA;
+  delete process.env.TOPIC_COHERENCE_THRESHOLD;
 });
 
 afterEach(() => {
@@ -51,16 +59,31 @@ async function settle(): Promise<void> {
   for (let round = 0; round < 5; round++) await delay(0);
 }
 
-test("message above threshold joins the topic and updates the centroid", () => {
+test("message above threshold joins the topic and nudges the centroid by alpha", () => {
   topic_infer(message("first", [1, 0]));
   topic_infer(message("second", [0.6, 0.8]));
 
   assert.equal(topics().length, 1);
   const topic = topics()[0]!;
   assert.equal(topic.messages.length, 2);
-  assert.deepEqual(topic.vec_sum, [1.6, 0.8]);
-  const norm = Math.hypot(1.6, 0.8);
-  assert.deepEqual(topic.vec_centroid, [1.6 / norm, 0.8 / norm]);
+  const mixed = [0.9 * 1 + 0.1 * 0.6, 0.9 * 0 + 0.1 * 0.8];
+  const norm = Math.hypot(mixed[0]!, mixed[1]!);
+  assert.ok(Math.abs(topic.vec_centroid[0]! - mixed[0]! / norm) < 1e-12);
+  assert.ok(Math.abs(topic.vec_centroid[1]! - mixed[1]! / norm) < 1e-12);
+});
+
+test("centroid alpha is configurable and validated", () => {
+  process.env.TOPIC_CENTROID_ALPHA = "0.5";
+  topic_infer(message("first", [1, 0]));
+  topic_infer(message("second", [0.6, 0.8]));
+
+  const centroid = topics()[0]!.vec_centroid;
+  const expected = [2 / Math.sqrt(5), 1 / Math.sqrt(5)];
+  assert.ok(Math.abs(centroid[0]! - expected[0]!) < 1e-12);
+  assert.ok(Math.abs(centroid[1]! - expected[1]!) < 1e-12);
+
+  process.env.TOPIC_CENTROID_ALPHA = "1";
+  assert.throws(() => topic_infer(message("bad", [1, 0])), /Invalid TOPIC_CENTROID_ALPHA/);
 });
 
 test("message below threshold creates a new candidate topic", () => {
@@ -94,28 +117,69 @@ test("candidate expires after 50 subsequent messages without reaching 5", () => 
   assert.ok(!topics().some((topic) => topic.messages[0]!.text === "stale"));
 });
 
-test("candidate reaching 5 messages is classified and named", async () => {
-  const calls = mockLlama([":other:", "Speedrun strats"]);
+test("candidate reaching 5 messages is named directly (classifier bypassed)", async () => {
+  const calls = mockLlama(["Speedrun strats"]);
   for (let index = 0; index < 5; index++) {
     topic_infer(message(`strats ${index}`, [1, 0]));
   }
   await settle();
 
-  assert.equal(calls(), 2);
+  assert.equal(calls(), 1);
   assert.equal(topics().length, 1);
   assert.equal(topics()[0]!.status, "confirmed");
   assert.equal(topics()[0]!.title, "Speedrun strats");
+  assert.equal(topics()[0]!.label, null);
 });
 
-test("candidate classified as unimportant is discarded", async () => {
-  const calls = mockLlama([":greeting:"]);
+function angle(degrees: number): number[] {
+  const radians = (degrees * Math.PI) / 180;
+  return [Math.cos(radians), Math.sin(radians)];
+}
+
+test("coherent topic passes the periodic check unchanged", () => {
+  for (let index = 0; index < 4; index++) {
+    topic_infer(message(`same ${index}`, [1, 0]));
+  }
+  assert.equal(topics().length, 1);
+  assert.equal(topics()[0]!.messages.length, 4);
+  assert.deepEqual(topics()[0]!.vec_centroid, [1, 0]);
+});
+
+test("drifted topic is regenerated from recent messages and re-titled", async () => {
+  process.env.TOPIC_AFFINITY_THRESHOLD = "0.1";
+  process.env.TOPIC_CENTROID_ALPHA = "0.9";
+  const calls = mockLlama(["Old title", "New title"]);
+
   for (let index = 0; index < 5; index++) {
-    topic_infer(message(`hi ${index}`, [1, 0]));
+    topic_infer(message(`start ${index}`, angle(0)));
   }
   await settle();
+  assert.equal(topics()[0]!.title, "Old title");
 
-  assert.equal(calls(), 1);
-  assert.equal(topics().length, 0);
+  topic_infer(message("drift 1", angle(60)));
+  topic_infer(message("drift 2", angle(120)));
+  topic_infer(message("drift 3", angle(180)));
+  await settle();
+
+  assert.equal(calls(), 2);
+  assert.equal(topics().length, 1);
+  const topic = topics()[0]!;
+  assert.equal(topic.status, "confirmed");
+  assert.equal(topic.title, "New title");
+  assert.equal(topic.messages.length, 5);
+  assert.equal(topic.messages[0]!.text, "start 3");
+  assert.equal(topic.messages[4]!.text, "drift 3");
+  const expected = angle(60);
+  assert.ok(Math.abs(topic.vec_centroid[0]! - expected[0]!) < 1e-12);
+  assert.ok(Math.abs(topic.vec_centroid[1]! - expected[1]!) < 1e-12);
+});
+
+test("coherence threshold is validated", () => {
+  process.env.TOPIC_COHERENCE_THRESHOLD = "0";
+  for (let index = 0; index < 3; index++) {
+    topic_infer(message(`ok ${index}`, [1, 0]));
+  }
+  assert.throws(() => topic_infer(message("fourth", [1, 0])), /Invalid TOPIC_COHERENCE_THRESHOLD/);
 });
 
 test("naming failure reverts to candidate and retries on the next message", async () => {
@@ -127,7 +191,7 @@ test("naming failure reverts to candidate and retries on the next message", asyn
   assert.equal(topics()[0]!.status, "candidate");
   assert.equal(topics()[0]!.title, null);
 
-  mockLlama([":other:", "Recovered topic"]);
+  mockLlama(["Recovered topic"]);
   topic_infer(message("retry", [1, 0]));
   await settle();
   assert.equal(topics()[0]!.status, "confirmed");

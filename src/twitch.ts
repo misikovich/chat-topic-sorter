@@ -1,7 +1,6 @@
 import type { Chatbot, ChatMessage } from "./chatbot.ts";
 
 const LOGTAG = "[TWITCH]";
-const CONNECTED_MESSAGE = "Connected.";
 const EVENTSUB_URL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=30";
 const EVENTSUB_API = "https://api.twitch.tv/helix/eventsub/subscriptions";
 const CHAT_API = "https://api.twitch.tv/helix/chat/messages";
@@ -104,7 +103,6 @@ export class TwitchChatbot implements Chatbot {
   #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   #reconnectAttempt = 0;
   #started = false;
-  #announced = false;
   #closed = false;
   #failure: Error | undefined;
 
@@ -305,14 +303,7 @@ export class TwitchChatbot implements Chatbot {
         keepaliveSeconds: keepalive,
         reconnected: state.replacing !== undefined,
       });
-      if (state.subscribe && !this.#announced) {
-        this.#announced = true;
-        try {
-          await this.sendMessage(CONNECTED_MESSAGE);
-        } catch (cause) {
-          console.error(LOGTAG, "failed to send connection message", error(cause).message);
-        }
-      }
+      // Bot join message disabled for now.
       return;
     }
 

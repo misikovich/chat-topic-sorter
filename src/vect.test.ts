@@ -1,18 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { vec_affinity, vec_normalize, vec_sum } from "./vect.ts";
+import { vec_affinity, vec_lerp, vec_normalize } from "./vect.ts";
 
-test("vec_sum adds vectors element-wise without mutating inputs", () => {
+test("vec_lerp mixes vectors by weight without mutating inputs", () => {
   const a = [1, 2, 3];
-  const b = [4, 5, 6];
-  assert.deepEqual(vec_sum(a, b), [5, 7, 9]);
+  const b = [5, 6, 7];
+  assert.deepEqual(vec_lerp(a, b, 0.25), [2, 3, 4]);
+  assert.deepEqual(vec_lerp(a, b, 0), [1, 2, 3]);
+  assert.deepEqual(vec_lerp(a, b, 1), [5, 6, 7]);
   assert.deepEqual(a, [1, 2, 3]);
-  assert.deepEqual(b, [4, 5, 6]);
+  assert.deepEqual(b, [5, 6, 7]);
 });
 
-test("vec_sum rejects length mismatch", () => {
-  assert.throws(() => vec_sum([1], [1, 2]), /Vector length mismatch: 1 !== 2/);
-  assert.throws(() => vec_sum([], [1]), /Vector length mismatch: 0 !== 1/);
+test("vec_lerp rejects length mismatch", () => {
+  assert.throws(() => vec_lerp([1], [1, 2], 0.5), /Vector length mismatch: 1 !== 2/);
+  assert.throws(() => vec_lerp([], [1], 0.5), /Vector length mismatch: 0 !== 1/);
 });
 
 test("vec_normalize scales a vector to unit length", () => {
@@ -32,13 +34,13 @@ test("vec_normalize rejects zero and empty vectors", () => {
   assert.throws(() => vec_normalize([]), /Attempted to normalize a zero vector/);
 });
 
-test("topic centroid flow: normalized accumulated sum is the mean direction", () => {
-  let vectorSum = vec_sum([1, 0], [0, 1]);
-  vectorSum = vec_sum(vectorSum, [1, 0]);
-  const centroid = vec_normalize(vectorSum);
-  const expected = [2 / Math.sqrt(5), 1 / Math.sqrt(5)];
-  assert.ok(Math.abs(centroid[0]! - expected[0]!) < 1e-12);
-  assert.ok(Math.abs(centroid[1]! - expected[1]!) < 1e-12);
+test("topic centroid flow: EMA update stays a unit vector leaning toward the anchor", () => {
+  let centroid = [1, 0];
+  centroid = vec_normalize(vec_lerp(centroid, [0, 1], 0.1));
+  centroid = vec_normalize(vec_lerp(centroid, [0, 1], 0.1));
+  const norm = Math.hypot(centroid[0]!, centroid[1]!);
+  assert.ok(Math.abs(norm - 1) < 1e-12);
+  assert.ok(centroid[0]! > centroid[1]!);
 });
 
 test("vec_affinity is 1 for identical, 0 for orthogonal, -1 for opposite vectors", () => {

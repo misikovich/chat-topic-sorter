@@ -155,12 +155,11 @@ test("Twitch chat receives, deduplicates, sends, replies, reconnects, and closes
     const firstMessage = iterator.next();
     await assert.rejects(bot.messages()[Symbol.asyncIterator]().next(), /only be consumed once/);
 
-    sendResponses.push({ data: [{ message_id: "startup-1", is_sent: true, drop_reason: null }] });
     await waitFor(() => FakeWebSocket.instances.length === 1);
     const firstSocket = FakeWebSocket.instances[0]!;
     firstSocket.receive(welcome("session-1"));
     await waitFor(() => calls.some((call) => call.url.endsWith("/eventsub/subscriptions")));
-    await waitFor(() => calls.some((call) => call.url.endsWith("/chat/messages")));
+    await delay(0);
 
     const subscriptionCall = calls.find((call) => call.url.endsWith("/eventsub/subscriptions"))!;
     assert.equal(new Headers(subscriptionCall.init?.headers).get("Authorization"), "Bearer secret-token");
@@ -196,17 +195,13 @@ test("Twitch chat receives, deduplicates, sends, replies, reconnects, and closes
     assert.equal(await bot.sendMessage("reply", "message-1"), "sent-2");
 
     const sendCalls = calls.filter((call) => call.url.endsWith("/chat/messages"));
+    assert.equal(sendCalls.length, 2);
     assert.deepEqual(JSON.parse(String(sendCalls[0]?.init?.body)), {
-      broadcaster_id: "channel-1",
-      sender_id: "bot-1",
-      message: "Connected.",
-    });
-    assert.deepEqual(JSON.parse(String(sendCalls[1]?.init?.body)), {
       broadcaster_id: "channel-1",
       sender_id: "bot-1",
       message: "hello",
     });
-    assert.deepEqual(JSON.parse(String(sendCalls[2]?.init?.body)), {
+    assert.deepEqual(JSON.parse(String(sendCalls[1]?.init?.body)), {
       broadcaster_id: "channel-1",
       sender_id: "bot-1",
       message: "reply",

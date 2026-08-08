@@ -1,8 +1,8 @@
-export function vec_sum(vec_a: number[], vec_b: number[]): number[] {
+export function vec_lerp(vec_a: number[], vec_b: number[], weight_b: number): number[] {
   if (vec_a.length !== vec_b.length) {
     throw new Error(`Vector length mismatch: ${vec_a.length} !== ${vec_b.length}`);
   }
-  return vec_a.map((v, i) => v + vec_b[i]!);
+  return vec_a.map((v, i) => v * (1 - weight_b) + vec_b[i]! * weight_b);
 }
 
 export function vec_normalize(vec: number[]): number[] {
