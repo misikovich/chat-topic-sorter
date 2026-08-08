@@ -13,6 +13,7 @@ The Twitch transport connects through EventSub, logs incoming messages. The topi
 ## Prerequisites
 
 - Node.js 26 and npm
+- Python 3.13 and [uv](https://docs.astral.sh/uv/)
 - A Twitch account with two-factor authentication enabled
 - A registered [Twitch developer application](https://dev.twitch.tv/console/apps)
 - The [Twitch CLI](https://dev.twitch.tv/docs/cli/) for the easiest local token setup
@@ -29,7 +30,9 @@ If cloning a fresh checkout, `git clone --recurse-submodules ...` initializes th
 
 ## Embedding server
 
-The embedding service lives in `embedding-server/`. Follow its [README](embedding-server/README.md) for Docker, local Python, model, and API configuration. Its default API address is `http://127.0.0.1:8091`.
+The embedding service lives in `embedding-server/`. `vectorize(message)` from `src/embedding.ts` returns one normalized `number[]`. On its first call it reuses a healthy server on `127.0.0.1:8091`, or runs `uv run embedding-server --preload` in the submodule and waits for the model to become ready.
+
+The default model is the pinned `sentence-transformers/all-MiniLM-L6-v2` revision with 384 dimensions. Override the matching `EMBEDDING_MODEL_ID`, `EMBEDDING_MODEL_REVISION`, and `EMBEDDING_DIMENSIONS` values together. `EMBEDDING_PORT`, `EMBEDDING_DEVICES`, `EMBEDDING_API_KEY`, and `EMBEDDING_INFERENCE_TIMEOUT_SECONDS` configure local startup and requests; see `.env.example` and the embedding server's [README](embedding-server/README.md). The topic pipeline does not call `vectorize` from the executable entrypoint yet.
 
 ## Twitch credentials
 
