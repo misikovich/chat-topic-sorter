@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
+import { messageVerify } from "./utils.ts";
 
 const LOGTAG = "[EMBEDDING]";
 const DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2";
@@ -211,16 +212,12 @@ function parseVector(text: string, configuration: EmbeddingConfig): number[] {
   return vector;
 }
 
-export async function vectorize(message: string): Promise<number[]> {
-  if (typeof message !== "string" || message.trim() === "") {
-    throw new Error("Embedding message must be a non-blank string");
-  }
-
-  const configuration = config();
+async function fetchEmbedding(message: string, configuration: EmbeddingConfig): Promise<string> {
   await ensureServer(configuration);
   const signal = AbortSignal.timeout(configuration.timeoutMilliseconds);
   let response: Response;
   let text: string;
+  
   try {
     response = await fetch(endpoint(configuration, "/v1/embeddings"), {
       method: "POST",
@@ -250,5 +247,19 @@ export async function vectorize(message: string): Promise<number[]> {
   if (!response.ok) {
     throw new Error(`Embedding request failed (${response.status}): ${text.trim() || response.statusText}`);
   }
-  return parseVector(text, configuration);
+  return text;
+}
+
+export async function vectorize(message: string): Promise<number[]> {
+  messageVerify(message);
+  const conf = config();
+
+  const time = performance.now();
+  
+  const resp = await fetchEmbedding(message, conf);
+  const vect = parseVector(resp, conf);
+
+  const took = performance.now() - time;
+  console.debug(LOGTAG, took, message.slice(0, 5), "vectorize() ->", vect.slice(0, 5));
+  return vect;
 }
