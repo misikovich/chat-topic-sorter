@@ -2,7 +2,7 @@
 
 A Twitch bot that groups chat messages into topics using embedding similarity and an LLM-generated topic name.
 
-The Twitch transport connects through EventSub, logs incoming messages. The topic-classification pipeline described below is not wired into the entrypoint yet.
+The Twitch transport connects through EventSub, logs incoming messages. The topic-classification pipeline is described below.
 
 ## Project components
 
@@ -34,7 +34,7 @@ If cloning a fresh checkout, `git clone --recurse-submodules ...` initializes th
 
 ## Embedding server
 
-The embedding service lives in `embedding-server/`. `vectorize(message)` from `src/embedding.ts` returns one normalized `number[]`. On its first call it reuses a healthy server on `127.0.0.1:8091`, or runs `uv run embedding-server --preload` in the submodule and waits for the model to become ready.
+The embedding service lives in `embedding-server/`. `vectorize(message)` from `src/embedding.ts` returns one vector `number[]`. On its first call it reuses a healthy server on `127.0.0.1:8091`, or runs `uv run embedding-server --preload` in the submodule and waits for the model to become ready.
 
 The default model is the pinned `sentence-transformers/all-MiniLM-L6-v2` revision with 384 dimensions. Override the matching `EMBEDDING_MODEL_ID`, `EMBEDDING_MODEL_REVISION`, and `EMBEDDING_DIMENSIONS` values together. `EMBEDDING_PORT`, `EMBEDDING_DEVICES`, `EMBEDDING_API_KEY`, and `EMBEDDING_INFERENCE_TIMEOUT_SECONDS` configure local startup and requests; see `.env.example` and the embedding server's [README](embedding-server/README.md). The topic pipeline does not call `vectorize` from the executable entrypoint yet.
 
@@ -54,13 +54,13 @@ Copy the resulting User Access Token without an `oauth:` prefix. Tokens expire, 
 Fill `.env`:
 
 
-| Variable                | Value                                                                   |
-| ----------------------- | ----------------------------------------------------------------------- |
-| `TWITCH_CLIENT_ID`      | Client ID from the developer console                                    |
-| `TWITCH_ACCESS_TOKEN`   | Raw user access token from`twitch token`                                |
-| `TWITCH_CHANNEL`        | Login name of the channel to join; resolved to its ID at startup        |
+| Variable                | Value                                                                       |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `TWITCH_CLIENT_ID`      | Client ID from the developer console                                        |
+| `TWITCH_ACCESS_TOKEN`   | Raw user access token from`twitch token`                                    |
+| `TWITCH_CHANNEL`        | Login name of the channel to join; resolved to its ID at startup            |
 | `TWITCH_BROADCASTER_ID` | Numeric user ID of the channel; required only when`TWITCH_CHANNEL` is unset |
-| `TWITCH_BOT_USER_ID`    | Numeric user ID of the token owner; optional when it is the broadcaster |
+| `TWITCH_BOT_USER_ID`    | Numeric user ID of the token owner; optional when it is the broadcaster     |
 
 To find the numeric ID associated with the token, load `.env` and validate it:
 
@@ -118,4 +118,4 @@ npm run test:llama
 5. When candidate reaches 5 messages:
    generate a name from its sample messages
 6. Delete candidate if it remains below 5 after 50 subsequent messages.
-7. Retire confirmed topics after they have been inactive for a suitable window.
+7. TODO: Retire confirmed topics after they have been inactive for a suitable window.
