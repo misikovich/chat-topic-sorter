@@ -70,16 +70,59 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   throw new Error("Timed out waiting for test condition");
 }
 
-test("environment configuration is required and defaults the bot user", () => {
-  assert.throws(() => twitchConfig({}), /TWITCH_BROADCASTER_ID/);
+test("environment configuration is required and defaults the bot user", async () => {
+  await assert.rejects(() => twitchConfig({}), /TWITCH_CLIENT_ID/);
+  await assert.rejects(
+    () => twitchConfig({ TWITCH_CLIENT_ID: "client", TWITCH_ACCESS_TOKEN: "token" }),
+    /TWITCH_BROADCASTER_ID/,
+  );
   assert.deepEqual(
-    twitchConfig({
+    await twitchConfig({
       TWITCH_CLIENT_ID: "client",
       TWITCH_ACCESS_TOKEN: "token",
       TWITCH_BROADCASTER_ID: "channel",
     }),
     { clientId: "client", accessToken: "token", broadcasterId: "channel", botUserId: "channel" },
   );
+});
+
+test("TWITCH_CHANNEL resolves the broadcaster ID by login name", async () => {
+  const realFetch = globalThis.fetch;
+  const calls: FetchCall[] = [];
+  const responses: Response[] = [
+    Response.json({ data: [{ id: "12345", login: "somechannel" }] }),
+    Response.json({ data: [] }),
+    new Response("unauthorized", { status: 401 }),
+  ];
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    calls.push({ url: String(input), init });
+    return responses.shift()!;
+  }) as typeof fetch;
+
+  try {
+    const env = {
+      TWITCH_CLIENT_ID: "client",
+      TWITCH_ACCESS_TOKEN: "token",
+      TWITCH_CHANNEL: "SomeChannel",
+    };
+    assert.deepEqual(await twitchConfig(env), {
+      clientId: "client",
+      accessToken: "token",
+      broadcasterId: "12345",
+      botUserId: "12345",
+    });
+    assert.equal(calls[0]!.url, "https://api.twitch.tv/helix/users?login=SomeChannel");
+    assert.deepEqual(calls[0]!.init?.headers, {
+      Authorization: "Bearer token",
+      "Client-Id": "client",
+    });
+
+    await assert.rejects(() => twitchConfig(env), /Twitch channel not found: SomeChannel/);
+    await assert.rejects(() => twitchConfig(env), /Twitch user lookup failed \(401\)/);
+    assert.equal(responses.length, 0);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 test("Twitch chat receives, deduplicates, sends, replies, reconnects, and closes", async () => {

@@ -6,7 +6,7 @@
 - `src/chatbot.ts` is the platform-neutral chat contract.
 - `src/twitch.ts` contains Twitch EventSub and Helix behavior.
 - `src/index.ts` is the environment-driven executable entrypoint.
-- The topic-classification pipeline described in `README.md` is not wired into the entrypoint yet.
+- `src/topic.ts` sorts vectorized messages into topics (see the flow in `README.md`) and is wired into the entrypoint.
 
 ## Work in this repository
 

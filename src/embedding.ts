@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { messageVerify } from "./utils.ts";
+import { vec_normalize } from "./vect.ts";
 
 const LOGTAG = "[EMBEDDING]";
 const DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2";
@@ -9,7 +10,6 @@ const DEFAULT_REVISION = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41";
 const DEFAULT_DIMENSIONS = 384;
 const DEFAULT_PORT = 8_091;
 const DEFAULT_TIMEOUT_SECONDS = 900;
-const NORMALIZATION_TOLERANCE = 1e-2;
 
 type EmbeddingConfig = {
   model: string;
@@ -197,19 +197,13 @@ function parseVector(text: string, configuration: EmbeddingConfig): number[] {
     throw new Error(`Malformed embedding response: expected ${configuration.dimensions} dimensions`);
   }
 
-  let squaredNorm = 0;
   const vector = embedding.map((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) {
       throw new Error("Malformed embedding response: vector values must be finite numbers");
     }
-    squaredNorm += value * value;
     return value;
   });
-  const norm = Math.sqrt(squaredNorm);
-  if (Math.abs(norm - 1) > NORMALIZATION_TOLERANCE) {
-    throw new Error(`Malformed embedding response: vector is not normalized (norm=${norm.toFixed(6)})`);
-  }
-  return vector;
+  return vec_normalize(vector);
 }
 
 async function fetchEmbedding(message: string, configuration: EmbeddingConfig): Promise<string> {

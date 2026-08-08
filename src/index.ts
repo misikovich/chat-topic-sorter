@@ -1,7 +1,9 @@
 import process from "node:process";
 
 import type { TwitchConfig } from "./twitch.ts";
-import { TwitchChatbot } from "./twitch.ts";
+import { TwitchChatbot, twitchUserId } from "./twitch.ts";
+import { vectorize } from "./embedding.ts";
+import { topic_infer, type ProcessedMessage } from "./topic.ts";
 
 const LOGTAG = "[MAIN]";
 
@@ -11,18 +13,25 @@ function required(env: Record<string, string | undefined>, name: string): string
   return value;
 }
 
-export function twitchConfig(env: Record<string, string | undefined>): TwitchConfig {
-  const broadcasterId = required(env, "TWITCH_BROADCASTER_ID");
+export async function twitchConfig(env: Record<string, string | undefined>): Promise<TwitchConfig> {
+  const clientId = required(env, "TWITCH_CLIENT_ID");
+  const accessToken = required(env, "TWITCH_ACCESS_TOKEN");
+  const channel = env.TWITCH_CHANNEL?.trim();
+  const broadcasterId = channel === undefined || channel === ""
+    ? required(env, "TWITCH_BROADCASTER_ID")
+    : await twitchUserId(channel, { clientId, accessToken });
   return {
-    clientId: required(env, "TWITCH_CLIENT_ID"),
-    accessToken: required(env, "TWITCH_ACCESS_TOKEN"),
+    clientId,
+    accessToken,
     broadcasterId,
     botUserId: env.TWITCH_BOT_USER_ID?.trim() || broadcasterId,
   };
 }
 
+
+
 async function main(): Promise<void> {
-  const config = twitchConfig(process.env);
+  const config = await twitchConfig(process.env);
   console.info(LOGTAG, "starting", {
     broadcasterId: config.broadcasterId,
     botUserId: config.botUserId,
@@ -36,8 +45,11 @@ async function main(): Promise<void> {
   process.once("SIGTERM", close);
 
   try {
-    for await (const message of bot.messages()) {
-      console.info(LOGTAG, `[${message.senderName}] ${message.text}`);
+    for await (const raw of bot.messages()) {
+      const vec = await vectorize(raw.text);
+      const processed: ProcessedMessage = { ...raw, vec };
+      console.debug(LOGTAG, "[MSG]", `[${raw.senderName}]`, `TEXT: [${raw.text.slice(0, 50)}]`, `VEC: [${vec.slice(0, 5)}...]`);
+      topic_infer(processed);
     }
   } finally {
     process.off("SIGINT", close);

@@ -195,7 +195,7 @@ test("embedding rejects HTTP and malformed vector responses", async () => {
     Response.json(embeddingResponse({ data: [{ index: 1, embedding: unitVector }] })),
     Response.json(embeddingResponse({ data: [{ index: 0, embedding: unitVector.slice(1) }] })),
     Response.json(embeddingResponse({ data: [{ index: 0, embedding: [null, ...unitVector.slice(1)] }] })),
-    Response.json(embeddingResponse({ data: [{ index: 0, embedding: [2, ...unitVector.slice(1)] }] })),
+    Response.json(embeddingResponse({ data: [{ index: 0, embedding: Array<number>(DIMENSIONS).fill(0) }] })),
   ];
   globalThis.fetch = (async (input: string | URL | Request): Promise<Response> => (
     String(input).endsWith("/healthz")
@@ -213,7 +213,7 @@ test("embedding rejects HTTP and malformed vector responses", async () => {
   await assert.rejects(vectorize("message"), /vector index 0/);
   await assert.rejects(vectorize("message"), /expected 384 dimensions/);
   await assert.rejects(vectorize("message"), /finite numbers/);
-  await assert.rejects(vectorize("message"), /not normalized/);
+  await assert.rejects(vectorize("message"), /zero vector/);
   assert.equal(responses.length, 0);
 });
 

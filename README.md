@@ -8,7 +8,7 @@ The Twitch transport connects through EventSub, logs incoming messages. The topi
 
 - **llama.cpp** LLM classifier, topic namegiver
 - [reynkonig](https://github.com/reynkonig)'s [**embedding server**](embedding-server/README.md), pinned as a Git submodule from [the upstream repository](https://github.com/reynkonig/embedding-server)
-- **webserver** to view resulted topics and control the bot
+- TODO: **webserver** to view resulted topics and control the bot
 
 ## Algorithm
 
@@ -58,7 +58,8 @@ Fill `.env`:
 | ----------------------- | ----------------------------------------------------------------------- |
 | `TWITCH_CLIENT_ID`      | Client ID from the developer console                                    |
 | `TWITCH_ACCESS_TOKEN`   | Raw user access token from`twitch token`                                |
-| `TWITCH_BROADCASTER_ID` | Numeric user ID of the channel to join                                  |
+| `TWITCH_CHANNEL`        | Login name of the channel to join; resolved to its ID at startup        |
+| `TWITCH_BROADCASTER_ID` | Numeric user ID of the channel; required only when`TWITCH_CHANNEL` is unset |
 | `TWITCH_BOT_USER_ID`    | Numeric user ID of the token owner; optional when it is the broadcaster |
 
 To find the numeric ID associated with the token, load `.env` and validate it:
@@ -74,7 +75,7 @@ curl -s https://id.twitch.tv/oauth2/validate \
 
 Use the returned `user_id` as `TWITCH_BOT_USER_ID`. If the bot account owns the channel, use the same ID for `TWITCH_BROADCASTER_ID` and leave `TWITCH_BOT_USER_ID` blank.
 
-For a different channel account, look up its ID by login name:
+For a different channel, the easiest option is to set `TWITCH_CHANNEL` to the channel's login name and leave `TWITCH_BROADCASTER_ID` blank — the bot performs this lookup itself at startup. To pin the numeric ID manually instead, look it up by login name:
 
 ```sh
 curl -s "https://api.twitch.tv/helix/users?login=CHANNEL_LOGIN" \
@@ -107,7 +108,7 @@ npm run test:llama
 1. Generate normalized embedding V.
 2. Compare V with every active topic centroid.
 3. Select the topic with the highest cosine similarity.
-4. If similarity >= threshold:
+4. If affinity >= threshold:
    add message to topic
    vector_sum += V
    centroid = normalize(vector_sum)

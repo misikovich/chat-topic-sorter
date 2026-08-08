@@ -5,6 +5,7 @@ const CONNECTED_MESSAGE = "Connected.";
 const EVENTSUB_URL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=30";
 const EVENTSUB_API = "https://api.twitch.tv/helix/eventsub/subscriptions";
 const CHAT_API = "https://api.twitch.tv/helix/chat/messages";
+const USERS_API = "https://api.twitch.tv/helix/users";
 const RECONNECT_DELAYS = [1, 2, 4, 8, 16, 30] as const;
 const SEEN_MESSAGE_LIMIT = 1_000;
 
@@ -60,6 +61,34 @@ function detail(text: string): string {
 
 function error(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
+}
+
+export async function twitchUserId(
+  login: string,
+  credentials: Pick<TwitchConfig, "clientId" | "accessToken">,
+): Promise<string> {
+  const url = new URL(USERS_API);
+  url.searchParams.set("login", login);
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${credentials.accessToken}`,
+      "Client-Id": credentials.clientId,
+    },
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Twitch user lookup failed (${response.status}): ${detail(text)}`);
+  }
+  let body: JsonObject;
+  try {
+    body = object(JSON.parse(text), "user lookup response");
+  } catch {
+    throw new Error("Malformed Twitch user lookup response");
+  }
+  const data = body.data;
+  if (!Array.isArray(data)) throw new Error("Malformed Twitch user lookup response");
+  if (data.length === 0) throw new Error(`Twitch channel not found: ${login}`);
+  return string(object(data[0], "user lookup response"), "id", "user lookup response");
 }
 
 export class TwitchChatbot implements Chatbot {

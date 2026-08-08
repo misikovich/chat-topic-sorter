@@ -5,6 +5,7 @@ REQUIREMENTS:
 - Use exactly the same language as the messages; never translate.
 - Preserve informal wording when natural.
 - Describe only the shared subject present in the messages.
+- Describe the people sending the messages as Viewers.
 - Do not invent people, objects, or events.
 - Do not add a prefix, explanation, quotation marks, or ending punctuation.
 RESPOND WITH ONLY THE DESCRIPTION.
