@@ -10,6 +10,10 @@ The Twitch transport connects through EventSub, logs incoming messages. The topi
 - [reynkonig](https://github.com/reynkonig)'s [**embedding server**](embedding-server/README.md), pinned as a Git submodule from [the upstream repository](https://github.com/reynkonig/embedding-server)
 - TODO: **webserver** to view resulted topics and control the bot
 
+## Example Image (working prototype)
+
+![1786294498235](images/README/1786294498235.png)
+
 ## Algorithm
 
 ![1786167229918](images/README/1786167229918.png)
