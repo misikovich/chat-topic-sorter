@@ -13,7 +13,8 @@ export type TopicView = Readonly<{
   status: Topic["status"];
   title: string | null;
   label: string | null;
-  messages: MessageView[];
+  vec_centroid: readonly number[];
+  messages: ReadonlyArray<MessageView & Readonly<{ vec: readonly number[] }>>;
 }>;
 
 let Server: http.Server | null = null;
@@ -34,7 +35,8 @@ export function web_topic_views(): TopicView[] {
       status: topic.status,
       title: topic.title,
       label: topic.label,
-      messages: topic.messages.map(messageView),
+      vec_centroid: topic.vec_centroid,
+      messages: topic.messages.map((message) => ({ ...messageView(message), vec: message.vec })),
     }))
     .sort((a, b) => b.messages.length - a.messages.length);
 }
@@ -164,7 +166,7 @@ const PAGE_HTML = `<!doctype html>
     overflow-y: auto;
     padding: 16px;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     align-content: start;
   }
@@ -175,7 +177,6 @@ const PAGE_HTML = `<!doctype html>
     padding: 12px;
   }
   .card.unimportant { opacity: 0.5; }
-  .card.candidate { opacity: 0.35; }
   .card h2 { margin: 0 0 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
   .badge {
     font-size: 11px;
@@ -192,6 +193,37 @@ const PAGE_HTML = `<!doctype html>
   .card ul { margin: 0; padding: 0; list-style: none; }
   .card li { margin: 2px 0; padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
   .card li.flash { outline: 1px solid transparent; animation: flash 1.5s ease-out; }
+  .row-index { color: var(--muted); display: inline-block; min-width: 2em; }
+  .copy-vector {
+    margin-left: 6px;
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .copy-vector:hover { border-color: var(--accent); color: var(--text); }
+  .heatmap { margin: 8px 0; }
+  .heatmap-scroll { overflow-x: auto; }
+  .heatmap canvas { display: block; image-rendering: pixelated; }
+  .heatmap-legend {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 8px;
+    margin: 4px 0 0 28px;
+    color: var(--muted);
+    font-size: 10px;
+  }
+  .heatmap-legend span:nth-child(2) { text-align: center; }
+  .heatmap-legend span:nth-child(3) { text-align: right; }
+  .heatmap-gradient {
+    height: 4px;
+    margin-left: 28px;
+    background: linear-gradient(90deg, #38bdf8, var(--panel), #f97350);
+  }
   @keyframes flash { from { outline-color: #2dd4bf; } to { outline-color: transparent; } }
   aside {
     grid-area: chat;
@@ -203,6 +235,17 @@ const PAGE_HTML = `<!doctype html>
   .msg { margin: 3px 0; overflow-wrap: anywhere; }
   .sender { color: var(--accent); font-weight: 600; }
   .empty { color: var(--muted); font-style: italic; }
+  @media (max-width: 700px) {
+    body {
+      height: auto;
+      min-height: 100vh;
+      grid-template-rows: auto auto auto;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: "header" "topics" "chat";
+    }
+    main { overflow-y: visible; grid-template-columns: minmax(0, 1fr); }
+    aside { border-top: 1px solid var(--border); border-left: 0; max-height: 40vh; }
+  }
 </style>
 </head>
 <body>
@@ -219,6 +262,7 @@ const PAGE_HTML = `<!doctype html>
   const channelEl = document.getElementById("channel");
   const topicsEl = document.getElementById("topics");
   const chatEl = document.getElementById("chat");
+  let renderedTopics = [];
 
   function esc(text) {
     return text.replace(/[&<>"']/g, (ch) => ({
@@ -239,27 +283,88 @@ const PAGE_HTML = `<!doctype html>
 
   const seenIds = new Set();
 
+  function topicScale(topic) {
+    let max = 0;
+    for (const value of topic.vec_centroid) max = Math.max(max, Math.abs(value));
+    for (const message of topic.messages) {
+      for (const value of message.vec) max = Math.max(max, Math.abs(value));
+    }
+    return max || 1;
+  }
+
+  function heatColor(value, scale) {
+    const intensity = Math.min(1, Math.abs(value) / scale);
+    const target = value < 0 ? [56, 189, 248] : [249, 115, 80];
+    return "rgb(" + target.map((channel, index) => Math.round([23, 23, 29][index] + (channel - [23, 23, 29][index]) * intensity)).join(",") + ")";
+  }
+
+  function drawHeatmap(canvas, topic, scale) {
+    const vectors = [topic.vec_centroid].concat(topic.messages.map((message) => message.vec));
+    const labelWidth = 28;
+    const rowHeight = 12;
+    canvas.width = labelWidth + topic.vec_centroid.length;
+    canvas.height = vectors.length * rowHeight;
+    const context = canvas.getContext("2d");
+    context.font = "10px system-ui, sans-serif";
+    context.textAlign = "right";
+    context.textBaseline = "middle";
+    vectors.forEach((vector, row) => {
+      context.fillStyle = "#8a8a96";
+      context.fillText(row === 0 ? "C" : String(row), labelWidth - 5, row * rowHeight + rowHeight / 2);
+      vector.forEach((value, dimension) => {
+        context.fillStyle = heatColor(value, scale);
+        context.fillRect(labelWidth + dimension, row * rowHeight, 1, rowHeight);
+      });
+    });
+  }
+
   function renderTopics(topicList, flashNew) {
+    renderedTopics = topicList;
     if (topicList.length === 0) {
       topicsEl.innerHTML = '<p class="empty">No topics yet.</p>';
       return;
     }
-    topicsEl.innerHTML = topicList.map((topic) => {
+    const scales = topicList.map(topicScale);
+    topicsEl.innerHTML = topicList.map((topic, topicIndex) => {
       const unimportant = topic.label !== null;
       const heading = topic.title ?? "";
       const badges =
         (topic.status !== "confirmed" ? '<span class="badge status-' + topic.status + '">' + topic.status + '</span>' : "") +
         (unimportant ? '<span class="badge">' + esc(topic.label) + '</span>' : "");
       const count = '<span class="count">' + topic.messages.length + '</span>';
-      const items = topic.messages.map((message) => {
+      const centroidCopy = '<button type="button" class="copy-vector" data-topic="' + topicIndex + '" data-message="-1" aria-label="Copy centroid vector as JSON">copy C</button>';
+      const scale = scales[topicIndex];
+      const scaleText = scale.toPrecision(3);
+      const dimensions = topic.vec_centroid.length;
+      const heatmap = '<div class="heatmap"><div class="heatmap-scroll"><canvas data-topic="' + topicIndex + '" aria-label="Embedding heatmap"></canvas><div class="heatmap-gradient" style="width:' + dimensions + 'px"></div><div class="heatmap-legend" style="width:' + dimensions + 'px"><span>-' + scaleText + '</span><span>0</span><span>+' + scaleText + '</span><span>dims 0-' + (dimensions - 1) + '</span></div></div></div>';
+      const items = topic.messages.map((message, messageIndex) => {
         const fresh = flashNew && !seenIds.has(message.id);
         seenIds.add(message.id);
-        return '<li' + (fresh ? ' class="flash"' : "") + '><span class="sender">' + esc(message.senderName) + '</span>: ' + esc(message.text) + '</li>';
+        return '<li' + (fresh ? ' class="flash"' : "") + '><span class="row-index">' + (messageIndex + 1) + '</span><span class="sender">' + esc(message.senderName) + '</span>: ' + esc(message.text) + '<button type="button" class="copy-vector" data-topic="' + topicIndex + '" data-message="' + messageIndex + '" aria-label="Copy message vector as JSON">copy vec</button></li>';
       }).join("");
       const classes = "card" + (unimportant ? " unimportant" : "") + (topic.status === "candidate" ? " candidate" : "");
-      return '<div class="' + classes + '"><h2>' + esc(heading) + badges + count + '</h2><ul>' + items + '</ul></div>';
+      return '<div class="' + classes + '"><h2>' + esc(heading) + badges + centroidCopy + count + '</h2>' + heatmap + '<ul>' + items + '</ul></div>';
     }).join("");
+    topicsEl.querySelectorAll("canvas[data-topic]").forEach((canvas) => {
+      const topicIndex = Number(canvas.dataset.topic);
+      drawHeatmap(canvas, topicList[topicIndex], scales[topicIndex]);
+    });
   }
+
+  topicsEl.addEventListener("click", async (event) => {
+    const button = event.target.closest("button.copy-vector");
+    if (button === null) return;
+    const topic = renderedTopics[Number(button.dataset.topic)];
+    const messageIndex = Number(button.dataset.message);
+    const vector = messageIndex < 0 ? topic.vec_centroid : topic.messages[messageIndex].vec;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(vector));
+      button.textContent = "copied";
+    } catch {
+      button.textContent = "copy failed";
+    }
+    setTimeout(() => { button.textContent = messageIndex < 0 ? "copy C" : "copy vec"; }, 1200);
+  });
 
   const source = new EventSource("/events");
   source.addEventListener("init", (event) => {

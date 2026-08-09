@@ -51,7 +51,7 @@ test("unknown path returns 404", async () => {
   assert.equal(response.status, 404);
 });
 
-test("init event carries channel, chat log and vec-free topics", async () => {
+test("init event carries channel, vec-free chat log and vectorized topics", async () => {
   const port = await start();
   web_message(message("hello"));
   topic_infer({ ...message("topical"), vec: [1, 0] });
@@ -61,15 +61,17 @@ test("init event carries channel, chat log and vec-free topics", async () => {
   const init = await readEvent(reader, "init") as {
     channel: string;
     chatLog: Array<Record<string, unknown>>;
-    topics: Array<{ messages: Array<Record<string, unknown>> }>;
+    topics: Array<{ vec_centroid: number[]; messages: Array<Record<string, unknown>> }>;
   };
   await reader.cancel();
 
   assert.equal(init.channel, "testchannel");
   assert.equal(init.chatLog.length, 1);
   assert.equal(init.chatLog[0]!.text, "hello");
+  assert.ok(!("vec" in init.chatLog[0]!));
   assert.equal(init.topics.length, 1);
-  assert.ok(!("vec" in init.topics[0]!.messages[0]!));
+  assert.deepEqual(init.topics[0]!.vec_centroid, [1, 0]);
+  assert.deepEqual(init.topics[0]!.messages[0]!.vec, [1, 0]);
 });
 
 test("web_message broadcasts to connected clients", async () => {
@@ -79,18 +81,19 @@ test("web_message broadcasts to connected clients", async () => {
   await readEvent(reader, "init");
 
   web_message(message("broadcast me"));
-  const received = await readEvent(reader, "message") as { text: string };
+  const received = await readEvent(reader, "message") as Record<string, unknown>;
   await reader.cancel();
 
   assert.equal(received.text, "broadcast me");
+  assert.ok(!("vec" in received));
 });
 
-test("web_topic_views strips vectors", () => {
-  topic_infer({ ...message("first"), vec: [1, 0] });
+test("web_topic_views exposes centroid and message vectors", () => {
+  topic_infer({ ...message("first"), vec: [3, 4] });
   const views = web_topic_views();
   assert.equal(views.length, 1);
-  assert.ok(!("vec_centroid" in views[0]!));
-  assert.ok(!("vec" in views[0]!.messages[0]!));
+  assert.deepEqual(views[0]!.vec_centroid, [0.6, 0.8]);
+  assert.deepEqual(views[0]!.messages[0]!.vec, [3, 4]);
   assert.equal(views[0]!.status, "candidate");
   assert.equal(views[0]!.label, null);
 });
@@ -104,6 +107,8 @@ test("web_topic_views sorts topics by message count descending", () => {
   assert.equal(views.length, 2);
   assert.equal(views[0]!.messages.length, 2);
   assert.equal(views[0]!.messages[0]!.text, "popular 1");
+  assert.equal(views[0]!.messages[1]!.text, "popular 2");
+  assert.deepEqual(views[0]!.messages.map((item) => item.vec), [[0, 1], [0, 1]]);
   assert.equal(views[1]!.messages.length, 1);
 });
 
